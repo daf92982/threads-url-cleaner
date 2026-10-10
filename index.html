@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads 網址清理工具</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f5f7;
+      --panel: #ffffff;
+      --text: #191919;
+      --muted: #666;
+      --border: #d9d9df;
+      --accent: #1769e0;
+      --accent-hover: #0f55bb;
+      --success: #167647;
+      --error: #b42318;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111216;
+        --panel: #1c1d23;
+        --text: #f4f4f5;
+        --muted: #b4b4bd;
+        --border: #41424b;
+        --accent: #76a7ff;
+        --accent-hover: #9bbdff;
+        --success: #70d7a0;
+        --error: #ff8c82;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 28px 16px;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: grid;
+      place-items: center;
+    }
+    main {
+      width: min(100%, 680px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: clamp(20px, 5vw, 36px);
+      box-shadow: 0 12px 36px rgba(0,0,0,.06);
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(1.45rem, 5vw, 2rem); }
+    .intro { margin: 0 0 24px; color: var(--muted); }
+    label { display: block; margin: 18px 0 8px; font-weight: 650; }
+    textarea {
+      width: 100%;
+      min-height: 112px;
+      resize: vertical;
+      padding: 13px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+      overflow-wrap: anywhere;
+    }
+    textarea:focus {
+      outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-color: var(--accent);
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    .primary { background: var(--accent); color: #fff; }
+    .primary:hover { background: var(--accent-hover); }
+    .secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .result-wrap { margin-top: 22px; }
+    #result {
+      min-height: 84px;
+      background: color-mix(in srgb, var(--bg) 75%, var(--panel));
+    }
+    #status { min-height: 1.5em; margin: 10px 0 0; color: var(--muted); }
+    #status.success { color: var(--success); }
+    #status.error { color: var(--error); }
+    .note { margin-top: 20px; font-size: .9rem; color: var(--muted); }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Threads 網址清理工具</h1>
+    <p class="intro">貼上網址，移除 <code>xmt</code> 參數，再複製清理後的結果。</p>
+
+    <form id="cleanForm">
+      <label for="inputUrl">輸入 Threads 網址</label>
+      <textarea id="inputUrl" placeholder="https://www.threads.com/@user/post/ABC123?xmt=..." autocomplete="url" spellcheck="false" required></textarea>
+      <div class="actions">
+        <button class="primary" type="submit">清除 xmt 參數</button>
+        <button class="secondary" type="button" id="clearBtn">清空</button>
+      </div>
+    </form>
+
+    <div class="result-wrap">
+      <label for="result">清理後的網址</label>
+      <textarea id="result" readonly placeholder="清理後的網址會顯示在這裡" spellcheck="false"></textarea>
+      <div class="actions">
+        <button class="primary" type="button" id="copyBtn">複製結果</button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
+
+    <p class="note">注意：這個工具只會移除網址中的 <code>xmt</code> 查詢參數，不會將 <code>/share/...</code> 短連結還原成原始貼文網址；其他參數會保留。</p>
+  </main>
+
+  <script>
+    const form = document.getElementById("cleanForm");
+    const input = document.getElementById("inputUrl");
+    const result = document.getElementById("result");
+    const status = document.getElementById("status");
+
+    function showStatus(message, type = "") {
+      status.textContent = message;
+      status.className = type;
+    }
+
+    function cleanThreadsUrl(value) {
+      const trimmed = value.trim();
+      if (!trimmed) throw new Error("請先輸入網址。");
+
+      let url;
+      try {
+        url = new URL(trimmed);
+      } catch {
+        throw new Error("網址格式不正確，請輸入完整網址（包含 https://）。");
+      }
+
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        throw new Error("網址必須使用 http:// 或 https://。");
+      }
+
+      const host = url.hostname.toLowerCase();
+      if (host !== "threads.com" && !host.endsWith(".threads.com") &&
+          host !== "threads.net" && !host.endsWith(".threads.net")) {
+        throw new Error("這看起來不是 Threads 網址，請確認後再試。");
+      }
+
+      url.searchParams.delete("xmt");
+      return url.toString();
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      try {
+        result.value = cleanThreadsUrl(input.value);
+        showStatus("完成！已移除 xmt 參數。", "success");
+      } catch (error) {
+        result.value = "";
+        showStatus(error.message, "error");
+      }
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      input.value = "";
+      result.value = "";
+      showStatus("");
+      input.focus();
+    });
+
+    document.getElementById("copyBtn").addEventListener("click", async () => {
+      if (!result.value) {
+        showStatus("目前沒有可複製的結果，請先清理網址。", "error");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(result.value);
+        showStatus("已複製到剪貼簿！", "success");
+      } catch {
+        result.focus();
+        result.select();
+        const copied = document.execCommand("copy");
+        showStatus(copied ? "已複製到剪貼簿！" : "瀏覽器不允許自動複製，請長按或手動選取結果複製。", copied ? "success" : "error");
+      }
+    });
+  </script>
+</body>
+</html>
